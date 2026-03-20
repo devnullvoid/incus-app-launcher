@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+
+source "${ROOT_DIR}/lib/common.sh"
+source "${ROOT_DIR}/lib/apps.sh"
+
+CLEANUP_WORKDIR=""
+CLEANUP_INSTANCE_NAME=""
+CLEANUP_ENABLED="false"
+CLEANUP_INSTANCE_CREATED="false"
+CLEANUP_DRY_RUN="false"
+
+cleanup_create_context() {
+  if [[ -n "${CLEANUP_WORKDIR}" ]]; then
+    rm -rf "${CLEANUP_WORKDIR}"
+  fi
+
+  if [[ "${CLEANUP_ENABLED}" == "true" && "${CLEANUP_DRY_RUN}" != "true" && "${CLEANUP_INSTANCE_CREATED}" == "true" && -n "${CLEANUP_INSTANCE_NAME}" ]]; then
+    log "Cleaning up failed instance ${CLEANUP_INSTANCE_NAME}"
+    incus_delete_instance "${CLEANUP_INSTANCE_NAME}"
+  fi
+}
+
+main() {
+  local cmd="${1:-}"
+  case "${cmd}" in
+    list-supported)
+      shift || true
+      cmd_list_supported "$@"
+      ;;
+    list-profiled)
+      shift || true
+      cmd_list_supported "$@"
+      ;;
+    show)
+      shift || true
+      cmd_show "$@"
+      ;;
+    create)
+      shift || true
+      cmd_create "$@"
+      ;;
+    smoke-test)
+      shift || true
+      cmd_smoke_test "$@"
+      ;;
+    ""|-h|--help|help)
+      usage
+      ;;
+    *)
+      die "Unknown command: ${cmd}"
+      ;;
+  esac
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  incus-app list-supported
+  incus-app list-profiled
+  incus-app show <app> [--ref <git-ref>]
+  incus-app create <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure]
+  incus-app smoke-test <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure]
+
+Commands:
+  list-supported    Show apps with launcher automation profiles
+  list-profiled     Alias for list-supported
+  show              Display upstream defaults and launcher notes
+  create            Create an Incus container and run the upstream installer
+  smoke-test        Create an app, run a basic instance/service check
+EOF
+}
+
+cmd_list_supported() {
+  assert_no_args "$@"
+  list_profiled_apps
+}
+
+cmd_show() {
+  local app="${1:-}"
+  [[ -n "${app}" ]] || die "show requires an app name"
+  shift || true
+
+  local ref="main"
+  local show_dry_run="false"
+  local show_name=""
+  parse_common_args ref show_dry_run show_name "$@"
+
+  local workdir
+  workdir="$(mktemp -d)"
+
+  fetch_upstream_bundle "${app}" "${ref}" "${workdir}"
+  parse_ct_metadata "${workdir}/ct.sh"
+  detect_install_interactivity "${workdir}/install.sh"
+
+  cat <<EOF
+App: ${app}
+Ref: ${ref}
+CPU: ${META_CPU}
+RAM MiB: ${META_RAM}
+Disk GiB: ${META_DISK}
+OS: ${META_OS}
+Version: ${META_VERSION}
+Unprivileged: ${META_UNPRIVILEGED}
+Needs TUN: ${META_TUN}
+Needs Nesting: ${META_NESTING}
+Needs FUSE: ${META_FUSE}
+Needs GPU: ${META_GPU}
+Interactive mode: $(app_interactivity "${app}")
+Automation: $(app_automation_summary "${app}")
+EOF
+
+  if [[ "${INTERACTIVE_DETECTED}" == "yes" ]]; then
+    printf 'Interactive hints:\n%s\n' "${INTERACTIVE_MATCHES}"
+  fi
+
+  rm -rf "${workdir}"
+}
+
+cmd_create() {
+  local app="${1:-}"
+  [[ -n "${app}" ]] || die "create requires an app name"
+  shift || true
+
+  local ref="main"
+  local dry_run="false"
+  local name=""
+  local cleanup_on_failure="false"
+  parse_common_args ref dry_run name cleanup_on_failure "$@"
+
+  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "false"
+}
+
+cmd_smoke_test() {
+  local app="${1:-}"
+  [[ -n "${app}" ]] || die "smoke-test requires an app name"
+  shift || true
+
+  local ref="main"
+  local dry_run="false"
+  local name=""
+  local cleanup_on_failure="false"
+  parse_common_args ref dry_run name cleanup_on_failure "$@"
+
+  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "true"
+}
+
+run_create_flow() {
+  local app="$1"
+  local ref="$2"
+  local name="$3"
+  local dry_run="$4"
+  local cleanup_on_failure="$5"
+  local run_smoke_test="$6"
+
+  if [[ -z "${name}" ]]; then
+    name="${app}"
+  fi
+
+  if [[ "${dry_run}" != "true" ]]; then
+    require_bin curl
+    require_bin incus
+  else
+    require_bin curl
+  fi
+
+  local workdir
+  workdir="$(mktemp -d)"
+  local instance_created="false"
+
+  CLEANUP_WORKDIR="${workdir}"
+  CLEANUP_INSTANCE_NAME="${name}"
+  CLEANUP_ENABLED="${cleanup_on_failure}"
+  CLEANUP_INSTANCE_CREATED="false"
+  CLEANUP_DRY_RUN="${dry_run}"
+
+  trap 'cleanup_create_context' EXIT
+
+  fetch_upstream_bundle "${app}" "${ref}" "${workdir}"
+  parse_ct_metadata "${workdir}/ct.sh"
+  detect_install_interactivity "${workdir}/install.sh"
+  render_runtime_files "${app}" "${name}" "${workdir}"
+
+  local image
+  image="$(resolve_image "${META_OS}" "${META_VERSION}")"
+
+  log "Creating ${app} as Incus instance ${name} from ${image}"
+
+  if [[ "${INTERACTIVE_DETECTED}" == "yes" ]] && ! has_automation_profile "${app}"; then
+    log "Detected upstream interactive prompts for ${app}, but no launcher automation profile exists yet."
+  fi
+
+  incus_prepare_instance "${name}" "${image}" "${dry_run}"
+  instance_created="true"
+  CLEANUP_INSTANCE_CREATED="true"
+  incus_apply_limits "${name}" "${dry_run}"
+  incus_apply_features "${name}" "${dry_run}"
+  incus_start_instance "${name}" "${dry_run}"
+  incus_push_runtime "${name}" "${workdir}" "${dry_run}"
+  incus_bootstrap_guest "${name}" "${dry_run}"
+  incus_run_installer "${name}" "${dry_run}"
+
+  if [[ "${run_smoke_test}" == "true" ]]; then
+    local check_cmd
+    check_cmd="$(app_smoke_check_command "${app}")"
+    log "Running smoke check for ${app}"
+    incus_smoke_check "${name}" "${check_cmd}" "${dry_run}"
+  fi
+
+  if [[ "${dry_run}" == "true" ]]; then
+    log "Dry run complete"
+  else
+    if [[ "${run_smoke_test}" == "true" ]]; then
+      log "Smoke test complete"
+    else
+      log "Creation complete"
+    fi
+  fi
+
+  trap - EXIT
+  CLEANUP_WORKDIR=""
+  CLEANUP_INSTANCE_NAME=""
+  CLEANUP_ENABLED="false"
+  CLEANUP_INSTANCE_CREATED="false"
+  CLEANUP_DRY_RUN="false"
+  rm -rf "${workdir}"
+}
+
+parse_common_args() {
+  local -n _ref="$1"
+  local -n _dry_run="$2"
+  local -n _name="$3"
+  local -n _cleanup_on_failure="$4"
+  shift 4 || true
+
+  while (($#)); do
+    case "$1" in
+      --ref)
+        _ref="${2:?missing value for --ref}"
+        shift 2
+        ;;
+      --dry-run)
+        _dry_run="true"
+        shift
+        ;;
+      --name)
+        _name="${2:?missing value for --name}"
+        shift 2
+        ;;
+      --cleanup-on-failure)
+        _cleanup_on_failure="true"
+        shift
+        ;;
+      *)
+        die "Unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+assert_no_args() {
+  (($# == 0)) || die "This command takes no arguments"
+}
+
+main "$@"
