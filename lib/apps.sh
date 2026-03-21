@@ -87,6 +87,9 @@ app_smoke_check_command() {
     adguard)
       echo "systemctl is-active AdGuardHome"
       ;;
+    docker)
+      echo "systemctl is-active --quiet docker && docker info >/dev/null"
+      ;;
     netbird)
       echo "systemctl is-active netbird"
       ;;

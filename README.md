@@ -116,6 +116,12 @@ Create an app container:
 ./bin/incus-app create netbird --name netbird --ref main
 ```
 
+Run upstream prompts interactively in your terminal:
+
+```bash
+./bin/incus-app create docker --name docker-test --prompt-mode interactive
+```
+
 Delete the instance automatically if creation fails:
 
 ```bash
@@ -154,6 +160,10 @@ UPSTREAM_RAW_BASE="file:///home/jon/Dev/github/ProxmoxVE" \
 - Public repo hardening includes CI for syntax and dry-run smoke coverage.
 - `netbird` is interactive upstream. The launcher answers the prompts with:
   managed deployment and "skip connection for now".
+- Prompt modes:
+  - `profile`: use launcher-provided answers when a profile exists
+  - `empty`: feed empty stdin
+  - `interactive`: attach upstream prompts to the current terminal
 - Some upstream scripts still assume a Proxmox environment. Unprofiled apps are
   attempted with empty stdin and may still need manual fixes or more launcher
   automation.

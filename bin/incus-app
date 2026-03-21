@@ -62,8 +62,8 @@ Usage:
   incus-app list-supported
   incus-app list-profiled
   incus-app show <app> [--ref <git-ref>]
-  incus-app create <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure]
-  incus-app smoke-test <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure]
+  incus-app create <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure] [--prompt-mode <interactive|profile|empty>]
+  incus-app smoke-test <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure] [--prompt-mode <interactive|profile|empty>]
 
 Commands:
   list-supported    Show apps with launcher automation profiles
@@ -88,7 +88,8 @@ cmd_show() {
   local show_dry_run="false"
   local show_name=""
   local show_cleanup_on_failure="false"
-  parse_common_args ref show_dry_run show_name show_cleanup_on_failure "$@"
+  local show_prompt_mode=""
+  parse_common_args ref show_dry_run show_name show_cleanup_on_failure show_prompt_mode "$@"
 
   local workdir
   workdir="$(mktemp -d)"
@@ -130,9 +131,10 @@ cmd_create() {
   local dry_run="false"
   local name=""
   local cleanup_on_failure="false"
-  parse_common_args ref dry_run name cleanup_on_failure "$@"
+  local prompt_mode=""
+  parse_common_args ref dry_run name cleanup_on_failure prompt_mode "$@"
 
-  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "false"
+  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "false" "${prompt_mode}"
 }
 
 cmd_smoke_test() {
@@ -144,9 +146,10 @@ cmd_smoke_test() {
   local dry_run="false"
   local name=""
   local cleanup_on_failure="false"
-  parse_common_args ref dry_run name cleanup_on_failure "$@"
+  local prompt_mode=""
+  parse_common_args ref dry_run name cleanup_on_failure prompt_mode "$@"
 
-  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "true"
+  run_create_flow "${app}" "${ref}" "${name}" "${dry_run}" "${cleanup_on_failure}" "true" "${prompt_mode}"
 }
 
 run_create_flow() {
@@ -156,6 +159,7 @@ run_create_flow() {
   local dry_run="$4"
   local cleanup_on_failure="$5"
   local run_smoke_test="$6"
+  local prompt_mode="$7"
 
   if [[ -z "${name}" ]]; then
     name="${app}"
@@ -166,6 +170,25 @@ run_create_flow() {
     require_bin incus
   else
     require_bin curl
+  fi
+
+  if [[ -z "${prompt_mode}" ]]; then
+    if has_automation_profile "${app}"; then
+      prompt_mode="profile"
+    else
+      prompt_mode="empty"
+    fi
+  fi
+
+  case "${prompt_mode}" in
+    interactive|profile|empty) ;;
+    *)
+      die "Unsupported prompt mode: ${prompt_mode}"
+      ;;
+  esac
+
+  if [[ "${prompt_mode}" == "interactive" && "${dry_run}" != "true" && ! -t 0 ]]; then
+    die "Interactive prompt mode requires a TTY"
   fi
 
   local workdir
@@ -189,8 +212,9 @@ run_create_flow() {
   image="$(resolve_image "${META_OS}" "${META_VERSION}")"
 
   log "Creating ${app} as Incus instance ${name} from ${image}"
+  log "Prompt mode: ${prompt_mode}"
 
-  if [[ "${INTERACTIVE_DETECTED}" == "yes" ]] && ! has_automation_profile "${app}"; then
+  if [[ "${INTERACTIVE_DETECTED}" == "yes" && "${prompt_mode}" == "empty" ]] && ! has_automation_profile "${app}"; then
     log "Detected upstream interactive prompts for ${app}, but no launcher automation profile exists yet."
   fi
 
@@ -202,7 +226,7 @@ run_create_flow() {
   incus_start_instance "${name}" "${dry_run}"
   incus_push_runtime "${name}" "${workdir}" "${dry_run}"
   incus_bootstrap_guest "${name}" "${dry_run}"
-  incus_run_installer "${name}" "${dry_run}"
+  incus_run_installer "${name}" "${dry_run}" "${prompt_mode}"
 
   if [[ "${run_smoke_test}" == "true" ]]; then
     local check_cmd
@@ -235,7 +259,8 @@ parse_common_args() {
   local -n _dry_run="$2"
   local -n _name="$3"
   local -n _cleanup_on_failure="$4"
-  shift 4 || true
+  local -n _prompt_mode="$5"
+  shift 5 || true
 
   while (($#)); do
     case "$1" in
@@ -254,6 +279,10 @@ parse_common_args() {
       --cleanup-on-failure)
         _cleanup_on_failure="true"
         shift
+        ;;
+      --prompt-mode)
+        _prompt_mode="${2:?missing value for --prompt-mode}"
+        shift 2
         ;;
       *)
         die "Unknown argument: $1"

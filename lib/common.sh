@@ -256,8 +256,19 @@ incus_bootstrap_guest() {
 incus_run_installer() {
   local name="$1"
   local dry_run="$2"
+  local prompt_mode="$3"
 
-  run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "set -euo pipefail; source /root/runtime.env; bash /root/install.sh < /root/installer.stdin"
+  case "${prompt_mode}" in
+    interactive)
+      run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "set -euo pipefail; source /root/runtime.env; bash /root/install.sh"
+      ;;
+    profile|empty)
+      run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "set -euo pipefail; source /root/runtime.env; bash /root/install.sh < /root/installer.stdin"
+      ;;
+    *)
+      die "Unknown prompt mode: ${prompt_mode}"
+      ;;
+  esac
 }
 
 incus_instance_exists() {
@@ -276,6 +287,30 @@ incus_smoke_check() {
   local dry_run="$3"
 
   run_or_print "${dry_run}" incus list "${name}" --format table
-  run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "${check_cmd}"
-  run_or_print "${dry_run}" incus exec "${name}" -- hostname -I
+  if [[ "${dry_run}" == "true" ]]; then
+    run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "${check_cmd}"
+    run_or_print "${dry_run}" incus exec "${name}" -- hostname -I
+    return
+  fi
+
+  local attempt
+  local max_attempts=10
+  local delay_seconds=3
+
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if incus exec "${name}" -- bash -lc "${check_cmd}" >/dev/null 2>&1; then
+      break
+    fi
+
+    if (( attempt == max_attempts )); then
+      log "Smoke check failed after ${max_attempts} attempts: ${check_cmd}"
+      incus exec "${name}" -- bash -lc "${check_cmd}"
+      return 1
+    fi
+
+    sleep "${delay_seconds}"
+  done
+
+  incus exec "${name}" -- bash -lc "${check_cmd}"
+  incus exec "${name}" -- hostname -I
 }
