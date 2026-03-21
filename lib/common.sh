@@ -176,6 +176,28 @@ run_or_print() {
   fi
 }
 
+run_captured_command() {
+  local __out_var="$1"
+  local __err_var="$2"
+  shift 2
+
+  local stdout_file
+  local stderr_file
+  stdout_file="$(mktemp)"
+  stderr_file="$(mktemp)"
+
+  local rc=0
+  set +e
+  "$@" >"${stdout_file}" 2>"${stderr_file}"
+  rc=$?
+  set -e
+
+  printf -v "${__out_var}" '%s' "$(<"${stdout_file}")"
+  printf -v "${__err_var}" '%s' "$(<"${stderr_file}")"
+  rm -f "${stdout_file}" "${stderr_file}"
+  return "${rc}"
+}
+
 incus_prepare_instance() {
   local name="$1"
   local image="$2"
@@ -296,18 +318,27 @@ incus_smoke_check() {
   local attempt
   local max_attempts=10
   local delay_seconds=3
+  local stdout=""
+  local stderr=""
+  local rc=0
 
   for ((attempt = 1; attempt <= max_attempts; attempt++)); do
-    if incus exec "${name}" -- bash -lc "${check_cmd}" >/dev/null 2>&1; then
+    if run_captured_command stdout stderr incus exec "${name}" -- bash -lc "${check_cmd}"; then
       break
     fi
+    rc=$?
 
     if (( attempt == max_attempts )); then
       log "Smoke check failed after ${max_attempts} attempts: ${check_cmd}"
-      incus exec "${name}" -- bash -lc "${check_cmd}"
+      log "Smoke check exit code: ${rc}"
+      [[ -n "${stdout}" ]] && printf '%s\n' "${stdout}" >&2
+      [[ -n "${stderr}" ]] && printf '%s\n' "${stderr}" >&2
       return 1
     fi
 
+    log "Smoke check attempt ${attempt}/${max_attempts} failed with exit code ${rc}: ${check_cmd}"
+    [[ -n "${stdout}" ]] && printf '%s\n' "${stdout}" >&2
+    [[ -n "${stderr}" ]] && printf '%s\n' "${stderr}" >&2
     sleep "${delay_seconds}"
   done
 
