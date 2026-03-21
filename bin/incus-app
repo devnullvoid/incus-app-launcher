@@ -87,7 +87,8 @@ cmd_show() {
   local ref="main"
   local show_dry_run="false"
   local show_name=""
-  parse_common_args ref show_dry_run show_name "$@"
+  local show_cleanup_on_failure="false"
+  parse_common_args ref show_dry_run show_name show_cleanup_on_failure "$@"
 
   local workdir
   workdir="$(mktemp -d)"

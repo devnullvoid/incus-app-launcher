@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a launcher bug or a failed app deployment
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: App
+      description: Upstream app name, for example adguard or netbird
+  - type: input
+    id: ref
+    attributes:
+      label: Upstream ref
+      description: Git ref or commit used with --ref
+      placeholder: main
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      description: Include the exact incus-app command
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Incus version, distro, and whether this was dry-run or real
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the most useful output only
+      render: shell
+    validations:
+      required: true

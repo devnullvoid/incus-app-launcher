@@ -1,0 +1,36 @@
+name: App compatibility report
+description: Report whether an upstream app worked or failed on Incus
+title: "[compat] "
+labels:
+  - compatibility
+body:
+  - type: input
+    id: app
+    attributes:
+      label: App
+      description: Upstream app name
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works with generic flow
+        - Works with launcher profile
+        - Fails during install
+        - Fails after install
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host distro, Incus version, and relevant project/profile details
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Include prompts, service names, or any Incus-specific adjustments

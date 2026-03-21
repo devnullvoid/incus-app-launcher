@@ -1,37 +1,65 @@
 # incus-app-launcher
 
-`incus-app-launcher` is a small launcher for running apps from the
-official `community-scripts/ProxmoxVE` catalog on Incus instead of Proxmox VE.
+`incus-app-launcher` runs app installers from
+[`community-scripts/ProxmoxVE`](https://github.com/community-scripts/ProxmoxVE)
+on Incus instead of Proxmox VE.
 
-It does not fork the upstream app catalog. Instead, it fetches the required
-`ct/<app>.sh`, `install/<app>-install.sh`, and shared helper files from the
-upstream repo at a chosen ref, then:
+The launcher stays thin. It does not fork the upstream app catalog. Instead, it
+fetches:
+
+- `ct/<app>.sh`
+- `install/<app>-install.sh`
+- shared helper files
+
+from the upstream repo at a chosen ref, then:
 
 1. Reads the upstream container defaults.
 2. Creates an Incus container with similar limits.
-3. Pushes the upstream installer into the guest.
-4. Applies a small automation profile when the launcher knows how to answer
+3. Bootstraps a small base package set inside the guest.
+4. Pushes the upstream installer into the guest.
+5. Applies a small automation profile when the launcher knows how to answer
    upstream prompts.
 
-## MVP scope
+## Status
 
-Initial automation profiles:
+This project is usable, but still early.
+
+What exists today:
+
+- generic create flow for upstream apps
+- prompt detection for upstream installers
+- a small set of automation profiles for interactive apps
+- dry-run and smoke-test commands
+- real-world validation on an Incus VPS
+
+What does not exist yet:
+
+- broad compatibility guarantees across the full upstream app catalog
+- complete translation of Proxmox-specific features
+- a mature release process
+
+## Support model
+
+- Any upstream app can be attempted.
+- The local maintained list is only for launcher automation profiles, not for a
+  master allowlist of compatible apps.
+- Unprofiled apps use the generic flow and empty stdin unless prompt handling
+  is added.
+- If an app fails, the first preference is improving generic Incus behavior.
+  App-specific profiles should stay small and focused.
+
+## Automation profiles
 
 - `adguard`
 - `vaultwarden`
 - `netbird`
 
-Current goals:
+## Tested apps
 
-- Keep the upstream ProxmoxVE repo untouched.
-- Make installs deterministic via `--ref`.
-- Support a first set of low-complexity apps plus one interactive example.
-- Avoid maintaining a full local allowlist of upstream apps.
+Validated on a real Incus 6.21 host:
 
-Current non-goals:
-
-- Full parity with Proxmox storage, backup, tags, descriptions, or host tools.
-- Rich translation of every Proxmox-specific feature.
+- `adguard`
+- `netbird`
 
 ## Requirements
 
@@ -41,6 +69,17 @@ Current non-goals:
 - `sed`
 - `mktemp`
 - `incus`
+
+## Safety notes
+
+- The launcher uses the existing default Incus profile unless you change the
+  code or environment around it.
+- It does not modify host-wide Incus profiles, networks, or storage pools.
+- Per-instance root disk sizing is done through instance device override, not
+  by editing shared profiles.
+- `--cleanup-on-failure` only removes a newly created instance when the
+  launcher itself fails after creation. Successful runs leave the instance in
+  place.
 
 ## Usage
 
@@ -64,6 +103,12 @@ Show the upstream defaults and launcher notes for an app:
 
 `show` also scans the fetched installer for common prompt patterns and reports
 whether upstream interactivity appears to be present.
+
+Show an unprofiled app and inspect prompt hints:
+
+```bash
+./bin/incus-app show pihole --ref main
+```
 
 Create an app container:
 
@@ -106,15 +151,12 @@ UPSTREAM_RAW_BASE="file:///home/jon/Dev/github/ProxmoxVE" \
 
 ## Notes
 
+- Public repo hardening includes CI for syntax and dry-run smoke coverage.
 - `netbird` is interactive upstream. The launcher answers the prompts with:
   managed deployment and "skip connection for now".
-- Any upstream app can be attempted. The local maintained list is only for
-  automation profiles, not for general app availability.
 - Some upstream scripts still assume a Proxmox environment. Unprofiled apps are
   attempted with empty stdin and may still need manual fixes or more launcher
   automation.
-- `--cleanup-on-failure` only removes the new instance when the launcher fails
-  after creating it. Successful runs leave the instance in place.
 - The launcher defaults to `main` if `--ref` is not set, but using a pinned
   commit is recommended for repeatable builds.
 - The MVP uses your existing Incus default profile and network. Custom network

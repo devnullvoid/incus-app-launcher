@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: bash -n bin/incus-app lib/common.sh lib/apps.sh
+
+      - name: Profile listing
+        run: ./bin/incus-app list-supported
+
+      - name: Show profiled interactive app
+        run: ./bin/incus-app show netbird --ref main
+
+      - name: Show unprofiled app
+        run: ./bin/incus-app show pihole --ref main
+
+      - name: Dry-run create
+        run: ./bin/incus-app create adguard --name ci-adguard --dry-run --cleanup-on-failure --ref main
+
+      - name: Dry-run smoke test
+        run: ./bin/incus-app smoke-test netbird --name ci-netbird --dry-run --cleanup-on-failure --ref main
