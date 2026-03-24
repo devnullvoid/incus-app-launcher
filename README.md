@@ -27,6 +27,7 @@ This project is usable, but still early.
 What exists today:
 
 - generic create flow for upstream apps
+- generic addon flow for upstream `tools/addon/*.sh` scripts inside existing containers
 - prompt detection for upstream installers
 - a small set of automation profiles for interactive apps
 - dry-run and smoke-test commands
@@ -59,7 +60,9 @@ What does not exist yet:
 Validated on a real Incus 6.21 host:
 
 - `adguard`
+- `docker`
 - `netbird`
+- `dockge` via `addon install dockge` inside a Docker-capable target container
 
 ## Requirements
 
@@ -122,6 +125,18 @@ Run upstream prompts interactively in your terminal:
 ./bin/incus-app create docker --name docker-test --prompt-mode interactive
 ```
 
+Run an upstream addon script inside an existing container:
+
+```bash
+./bin/incus-app addon install dockge --target docker-host --prompt-mode interactive
+```
+
+Run an addon update flow inside an existing container:
+
+```bash
+./bin/incus-app addon update dockge --target docker-host --prompt-mode interactive
+```
+
 Delete the instance automatically if creation fails:
 
 ```bash
@@ -157,6 +172,12 @@ UPSTREAM_RAW_BASE="file:///home/jon/Dev/github/ProxmoxVE" \
 
 ## Notes
 
+- Upstream has two relevant models:
+  - app containers driven by `ct/<app>.sh` plus `install/<app>-install.sh`
+  - addon scripts driven by `tools/addon/<name>.sh`
+- Addons are meant to run inside an existing target container, not through the
+  normal app-creation path.
+- `dockge` is the current example of an upstream addon-oriented workflow.
 - Public repo hardening includes CI for syntax and dry-run smoke coverage.
 - `netbird` is interactive upstream. The launcher answers the prompts with:
   managed deployment and "skip connection for now".
@@ -164,6 +185,7 @@ UPSTREAM_RAW_BASE="file:///home/jon/Dev/github/ProxmoxVE" \
   - `profile`: use launcher-provided answers when a profile exists
   - `empty`: feed empty stdin
   - `interactive`: attach upstream prompts to the current terminal
+- Addon commands support `interactive` and `empty` prompt modes.
 - Some upstream scripts still assume a Proxmox environment. Unprofiled apps are
   attempted with empty stdin and may still need manual fixes or more launcher
   automation.

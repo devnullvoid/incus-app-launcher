@@ -8,17 +8,28 @@ This repo provides an Incus-native launcher for upstream app installers from
 The upstream ProxmoxVE repo is the source of truth for app definitions and
 install scripts. This repo should stay thin.
 
+There are two upstream integration models:
+
+- App model:
+  - `ct/<app>.sh`
+  - `install/<app>-install.sh`
+- Addon model:
+  - `tools/addon/<name>.sh`
+  - runs inside an existing container instead of creating a new one
+
 ## Design rules
 
 - Do not fork or copy the upstream app catalog into this repo.
 - Fetch upstream `ct/<app>.sh`, `install/<app>-install.sh`, and shared helper
   files on demand.
+- Fetch upstream `tools/addon/<name>.sh` on demand for addon workflows.
 - Prefer pinned upstream refs for repeatable builds and tests.
 - Treat all upstream apps as attemptable by default.
 - Do not maintain a local master allowlist of "compatible" apps.
 - Maintain only:
   - launcher behavior
   - automation profiles for known interactive apps
+  - addon execution behavior for existing containers
   - Incus-specific translation logic
   - test fixtures and docs
 
@@ -30,6 +41,16 @@ install scripts. This repo should stay thin.
   - app-specific environment injection
   - Incus device or config adjustments beyond the generic path
 - If an app works without custom handling, do not add a profile for it.
+
+## Addon policy
+
+- Prefer addon execution for upstream tools that no longer have a normal
+  `install/<app>-install.sh` path.
+- Dockge is the reference example.
+- Do not try to force addon-oriented upstream tools through the normal
+  app-creation path unless upstream restores a first-class installer flow.
+- Addon commands should target an existing Incus container and keep host-level
+  assumptions minimal.
 
 ## Compatibility policy
 
@@ -46,6 +67,8 @@ install scripts. This repo should stay thin.
 - Keep network and Incus assumptions minimal. Use the default Incus profile
   unless there is a strong reason not to.
 - Avoid embedding large upstream script bodies in this repo.
+- Match upstream defaults when they materially affect container behavior.
+  Current example: default nesting should behave like upstream `build.func`.
 
 ## Verification
 
@@ -56,9 +79,11 @@ install scripts. This repo should stay thin.
   - instance creation
   - file push
   - installer execution
+  - addon execution inside an existing container when addon behavior changes
 
 ## Documentation expectations
 
 - Update `README.md` when CLI behavior changes.
+- Update `CHANGELOG.md` for user-visible behavior changes.
 - Document new automation profiles and why they are needed.
 - Be explicit about what is generic launcher behavior versus app-specific logic.

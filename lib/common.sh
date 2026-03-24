@@ -55,6 +55,14 @@ fetch_upstream_bundle() {
   fetch_raw_file "${ref}" "misc/install.func" "${workdir}/install.func"
 }
 
+fetch_upstream_addon() {
+  local addon="$1"
+  local ref="$2"
+  local workdir="$3"
+
+  fetch_raw_file "${ref}" "tools/addon/${addon}.sh" "${workdir}/addon.sh"
+}
+
 extract_var_default() {
   local key="$1"
   local file="$2"
@@ -275,6 +283,22 @@ incus_bootstrap_guest() {
   esac
 }
 
+incus_bootstrap_existing_guest() {
+  local name="$1"
+  local dry_run="$2"
+
+  run_or_print "${dry_run}" incus exec "${name}" -- sh -lc '
+if command -v apk >/dev/null 2>&1; then
+  apk update && apk add --no-cache bash curl
+elif command -v apt-get >/dev/null 2>&1; then
+  apt-get update && apt-get install -y bash curl
+else
+  echo "Unsupported guest package manager" >&2
+  exit 1
+fi
+'
+}
+
 incus_run_installer() {
   local name="$1"
   local dry_run="$2"
@@ -286,6 +310,38 @@ incus_run_installer() {
       ;;
     profile|empty)
       run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "set -euo pipefail; source /root/runtime.env; bash /root/install.sh < /root/installer.stdin"
+      ;;
+    *)
+      die "Unknown prompt mode: ${prompt_mode}"
+      ;;
+  esac
+}
+
+incus_push_addon_script() {
+  local name="$1"
+  local workdir="$2"
+  local dry_run="$3"
+
+  run_or_print "${dry_run}" incus file push "${workdir}/addon.sh" "${name}/root/addon.sh"
+}
+
+incus_run_addon_script() {
+  local name="$1"
+  local dry_run="$2"
+  local prompt_mode="$3"
+  local addon_action="$4"
+
+  local exec_cmd="set -euo pipefail; export type=${addon_action}; bash /root/addon.sh"
+  if [[ "${addon_action}" == "install" ]]; then
+    exec_cmd="set -euo pipefail; unset type; bash /root/addon.sh"
+  fi
+
+  case "${prompt_mode}" in
+    interactive)
+      run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "${exec_cmd}"
+      ;;
+    empty|profile)
+      run_or_print "${dry_run}" incus exec "${name}" -- bash -lc "${exec_cmd} < /dev/null"
       ;;
     *)
       die "Unknown prompt mode: ${prompt_mode}"
