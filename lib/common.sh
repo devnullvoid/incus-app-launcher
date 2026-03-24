@@ -85,7 +85,7 @@ parse_ct_metadata() {
   [[ -n "${META_APP_DISPLAY}" ]] || META_APP_DISPLAY="${META_OS}"
   [[ -n "${META_UNPRIVILEGED}" ]] || META_UNPRIVILEGED="1"
   [[ -n "${META_TUN}" ]] || META_TUN="no"
-  [[ -n "${META_NESTING}" ]] || META_NESTING="no"
+  [[ -n "${META_NESTING}" ]] || META_NESTING="1"
   [[ -n "${META_FUSE}" ]] || META_FUSE="no"
   [[ -n "${META_GPU}" ]] || META_GPU="no"
 }
