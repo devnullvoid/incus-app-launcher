@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added optional PocketBase metadata enrichment for `show` and a new `search`
+  command, while keeping execution script-authoritative.
 - Added `addon install` and `addon update` to run upstream addon scripts inside
   existing Incus containers.
 - Validated Dockge addon installation inside a disposable Docker container on a

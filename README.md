@@ -28,6 +28,7 @@ What exists today:
 
 - generic create flow for upstream apps
 - generic addon flow for upstream `tools/addon/*.sh` scripts inside existing containers
+- optional PocketBase metadata enrichment for discovery and script labeling
 - prompt detection for upstream installers
 - a small set of automation profiles for interactive apps
 - dry-run and smoke-test commands
@@ -73,6 +74,10 @@ Validated on a real Incus 6.21 host:
 - `mktemp`
 - `incus`
 
+Optional for metadata search/enrichment:
+
+- `jq`
+
 ## Safety notes
 
 - The launcher uses the existing default Incus profile unless you change the
@@ -106,6 +111,12 @@ Show the upstream defaults and launcher notes for an app:
 
 `show` also scans the fetched installer for common prompt patterns and reports
 whether upstream interactivity appears to be present.
+
+Search script metadata from PocketBase:
+
+```bash
+./bin/incus-app search dockge
+```
 
 Show an unprofiled app and inspect prompt hints:
 
@@ -178,6 +189,12 @@ UPSTREAM_RAW_BASE="file:///home/jon/Dev/github/ProxmoxVE" \
 - Addons are meant to run inside an existing target container, not through the
   normal app-creation path.
 - `dockge` is the current example of an upstream addon-oriented workflow.
+- PocketBase metadata is used only to enrich discovery and classification.
+  Execution still relies on the upstream scripts.
+- PocketBase metadata can identify:
+  - script type (`lxc`, `vm`, `addon`, `pve`)
+  - development status (`ProxmoxVED` vs `ProxmoxVE`)
+  - disabled/deleted state
 - Public repo hardening includes CI for syntax and dry-run smoke coverage.
 - `netbird` is interactive upstream. The launcher answers the prompts with:
   managed deployment and "skip connection for now".

@@ -39,6 +39,10 @@ main() {
       shift || true
       cmd_show "$@"
       ;;
+    search)
+      shift || true
+      cmd_search "$@"
+      ;;
     create)
       shift || true
       cmd_create "$@"
@@ -66,6 +70,7 @@ Usage:
   incus-app list-supported
   incus-app list-profiled
   incus-app show <app> [--ref <git-ref>]
+  incus-app search <query>
   incus-app create <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure] [--prompt-mode <interactive|profile|empty>]
   incus-app smoke-test <app> [--name <instance>] [--ref <git-ref>] [--dry-run] [--cleanup-on-failure] [--prompt-mode <interactive|profile|empty>]
   incus-app addon install <addon> --target <instance> [--ref <git-ref>] [--dry-run] [--prompt-mode <interactive|empty>]
@@ -75,6 +80,7 @@ Commands:
   list-supported    Show apps with launcher automation profiles
   list-profiled     Alias for list-supported
   show              Display upstream defaults and launcher notes
+  search            Search optional PocketBase metadata by name, slug, or description
   create            Create an Incus container and run the upstream installer
   smoke-test        Create an app, run a basic instance/service check
   addon             Run an upstream addon script inside an existing container
@@ -100,14 +106,48 @@ cmd_show() {
 
   local workdir
   workdir="$(mktemp -d)"
+  local metadata_file="${workdir}/metadata.json"
 
-  fetch_upstream_bundle "${app}" "${ref}" "${workdir}"
-  parse_ct_metadata "${workdir}/ct.sh"
-  detect_install_interactivity "${workdir}/install.sh"
+  metadata_clear
+  if metadata_fetch_record "${app}" "${metadata_file}" 2>/dev/null; then
+    metadata_parse_record "${metadata_file}" || true
+  fi
 
-  cat <<EOF
+  if [[ "${PB_FOUND}" == "yes" ]]; then
+    cat <<EOF
+App: ${PB_NAME:-${app}}
+Slug: ${PB_SLUG:-${app}}
+Ref: ${ref}
+Metadata source: PocketBase
+Script mode: ${PB_SOURCE_TYPE}
+Script path: ${PB_SCRIPT_PATH}
+Source repo: $(metadata_repo_name)
+Description: ${PB_DESCRIPTION:-n/a}
+Categories: ${PB_CATEGORIES:-n/a}
+Website: ${PB_WEBSITE:-n/a}
+Documentation: ${PB_DOCUMENTATION:-n/a}
+Config path: ${PB_CONFIG_PATH:-n/a}
+Interface port: ${PB_PORT:-n/a}
+Updateable: ${PB_UPDATEABLE}
+Privileged: ${PB_PRIVILEGED}
+Is development: ${PB_IS_DEV}
+Is disabled: ${PB_IS_DISABLED}
+Is deleted: ${PB_IS_DELETED}
+EOF
+  else
+    cat <<EOF
 App: ${app}
 Ref: ${ref}
+Metadata source: script parsing only
+EOF
+  fi
+
+  if [[ "${PB_SOURCE_TYPE:-lxc}" == "lxc" || "${PB_FOUND}" != "yes" ]]; then
+    fetch_upstream_bundle "${app}" "${ref}" "${workdir}"
+    parse_ct_metadata "${workdir}/ct.sh"
+    detect_install_interactivity "${workdir}/install.sh"
+
+    cat <<EOF
 CPU: ${META_CPU}
 RAM MiB: ${META_RAM}
 Disk GiB: ${META_DISK}
@@ -122,11 +162,62 @@ Interactive mode: $(app_interactivity "${app}")
 Automation: $(app_automation_summary "${app}")
 EOF
 
-  if [[ "${INTERACTIVE_DETECTED}" == "yes" ]]; then
-    printf 'Interactive hints:\n%s\n' "${INTERACTIVE_MATCHES}"
+    if [[ "${INTERACTIVE_DETECTED}" == "yes" ]]; then
+      printf 'Interactive hints:\n%s\n' "${INTERACTIVE_MATCHES}"
+    fi
+  else
+    case "${PB_SOURCE_TYPE}" in
+      addon)
+        cat <<EOF
+Launcher path: use \`incus-app addon install ${PB_SLUG} --target <instance>\`
+EOF
+        ;;
+      pve)
+        cat <<EOF
+Launcher path: not supported for execution; this is a Proxmox host tool
+EOF
+        ;;
+      vm)
+        cat <<EOF
+Launcher path: not supported for execution; VM creation is not implemented
+EOF
+        ;;
+    esac
   fi
 
   rm -rf "${workdir}"
+}
+
+cmd_search() {
+  local query="${1:-}"
+  [[ -n "${query}" ]] || die "search requires a query"
+  shift || true
+  assert_no_args "$@"
+
+  metadata_supported || die "search requires jq"
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+  metadata_fetch_all_records "${tmp_file}"
+
+  jq -r --arg q "${query}" '
+    select(
+      ((.name // "") | ascii_downcase | contains($q | ascii_downcase)) or
+      ((.slug // "") | ascii_downcase | contains($q | ascii_downcase)) or
+      ((.description // "") | ascii_downcase | contains($q | ascii_downcase))
+    )
+    | [
+        (.name // ""),
+        (.slug // ""),
+        (.expand.type.type // .type // ""),
+        (if (.is_dev // false) then "dev" else "prod" end),
+        (.description // "")
+      ] | @tsv
+  ' "${tmp_file}" | while IFS=$'\t' read -r name slug source_type repo_state description; do
+    printf '%s\t%s\t%s\t%s\t%s\n' "${name}" "${slug}" "${source_type}" "${repo_state}" "${description}"
+  done
+
+  rm -f "${tmp_file}"
 }
 
 cmd_create() {
@@ -234,6 +325,29 @@ run_create_flow() {
   CLEANUP_DRY_RUN="${dry_run}"
 
   trap 'cleanup_create_context' EXIT
+
+  local metadata_file="${workdir}/metadata.json"
+  metadata_clear
+  if metadata_fetch_record "${app}" "${metadata_file}" 2>/dev/null; then
+    metadata_parse_record "${metadata_file}" || true
+  fi
+
+  if [[ "${PB_FOUND}" == "yes" && "${PB_SOURCE_TYPE}" != "lxc" ]]; then
+    case "${PB_SOURCE_TYPE}" in
+      addon)
+        die "${app} is an addon script; use: incus-app addon install ${PB_SLUG} --target <instance>"
+        ;;
+      pve)
+        die "${app} is a Proxmox host tool and cannot be created as an Incus app container"
+        ;;
+      vm)
+        die "${app} is a VM script and VM creation is not implemented"
+        ;;
+      *)
+        die "${app} is not an LXC app script"
+        ;;
+    esac
+  fi
 
   fetch_upstream_bundle "${app}" "${ref}" "${workdir}"
   parse_ct_metadata "${workdir}/ct.sh"

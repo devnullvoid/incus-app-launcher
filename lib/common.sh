@@ -2,6 +2,9 @@
 
 UPSTREAM_REPO="${UPSTREAM_REPO:-community-scripts/ProxmoxVE}"
 UPSTREAM_RAW_BASE="${UPSTREAM_RAW_BASE:-https://raw.githubusercontent.com/${UPSTREAM_REPO}}"
+METADATA_PB_BASE="${METADATA_PB_BASE:-https://db.community-scripts.org}"
+METADATA_PB_API="${METADATA_PB_API:-${METADATA_PB_BASE}/api/collections}"
+METADATA_PB_COLLECTION="${METADATA_PB_COLLECTION:-script_scripts}"
 
 META_CPU=""
 META_RAM=""
@@ -16,6 +19,23 @@ META_FUSE="no"
 META_GPU="no"
 INTERACTIVE_DETECTED="no"
 INTERACTIVE_MATCHES=""
+PB_FOUND="no"
+PB_NAME=""
+PB_SLUG=""
+PB_DESCRIPTION=""
+PB_CATEGORIES=""
+PB_SOURCE_TYPE=""
+PB_NORMALIZED_TYPE=""
+PB_SCRIPT_PATH=""
+PB_WEBSITE=""
+PB_DOCUMENTATION=""
+PB_CONFIG_PATH=""
+PB_PORT=""
+PB_IS_DEV="false"
+PB_IS_DISABLED="false"
+PB_IS_DELETED="false"
+PB_UPDATEABLE="false"
+PB_PRIVILEGED="false"
 
 log() {
   printf '[incus-app] %s\n' "$*" >&2
@@ -61,6 +81,133 @@ fetch_upstream_addon() {
   local workdir="$3"
 
   fetch_raw_file "${ref}" "tools/addon/${addon}.sh" "${workdir}/addon.sh"
+}
+
+metadata_supported() {
+  command -v jq >/dev/null 2>&1
+}
+
+metadata_clear() {
+  PB_FOUND="no"
+  PB_NAME=""
+  PB_SLUG=""
+  PB_DESCRIPTION=""
+  PB_CATEGORIES=""
+  PB_SOURCE_TYPE=""
+  PB_NORMALIZED_TYPE=""
+  PB_SCRIPT_PATH=""
+  PB_WEBSITE=""
+  PB_DOCUMENTATION=""
+  PB_CONFIG_PATH=""
+  PB_PORT=""
+  PB_IS_DEV="false"
+  PB_IS_DISABLED="false"
+  PB_IS_DELETED="false"
+  PB_UPDATEABLE="false"
+  PB_PRIVILEGED="false"
+}
+
+normalize_pb_script_type() {
+  local script_type="$1"
+  case "${script_type}" in
+    lxc) echo "ct" ;;
+    vm) echo "vm" ;;
+    addon|pve) echo "tools" ;;
+    turnkey) echo "turnkey" ;;
+    *) echo "${script_type}" ;;
+  esac
+}
+
+build_pb_script_path() {
+  local script_type="$1"
+  local slug="$2"
+  case "${script_type}" in
+    lxc) echo "ct/${slug}.sh" ;;
+    vm) echo "vm/${slug}.sh" ;;
+    addon) echo "tools/addon/${slug}.sh" ;;
+    pve) echo "tools/pve/${slug}.sh" ;;
+    turnkey) echo "turnkey/turnkey.sh" ;;
+    *) echo "" ;;
+  esac
+}
+
+metadata_fetch_record() {
+  local slug="$1"
+  local out="$2"
+
+  metadata_supported || return 1
+
+  curl -fsSLG \
+    --data-urlencode "filter=(slug=\"${slug}\")" \
+    --data-urlencode "expand=type" \
+    --data-urlencode "perPage=1" \
+    "${METADATA_PB_API}/${METADATA_PB_COLLECTION}/records" -o "${out}"
+}
+
+metadata_parse_record() {
+  local file="$1"
+  metadata_clear
+
+  metadata_supported || return 1
+
+  local count
+  count="$(jq -r '.items | length' "${file}" 2>/dev/null || echo "0")"
+  [[ "${count}" != "0" ]] || return 1
+
+  PB_FOUND="yes"
+  PB_NAME="$(jq -r '.items[0].name // ""' "${file}")"
+  PB_SLUG="$(jq -r '.items[0].slug // ""' "${file}")"
+  PB_DESCRIPTION="$(jq -r '.items[0].description // ""' "${file}")"
+  PB_CATEGORIES="$(jq -r '(.items[0].categories // []) | join(", ")' "${file}")"
+  PB_SOURCE_TYPE="$(jq -r '.items[0].expand.type.type // .items[0].type // ""' "${file}")"
+  PB_NORMALIZED_TYPE="$(normalize_pb_script_type "${PB_SOURCE_TYPE}")"
+  PB_SCRIPT_PATH="$(build_pb_script_path "${PB_SOURCE_TYPE}" "${PB_SLUG}")"
+  PB_WEBSITE="$(jq -r '.items[0].website // ""' "${file}")"
+  PB_DOCUMENTATION="$(jq -r '.items[0].documentation // ""' "${file}")"
+  PB_CONFIG_PATH="$(jq -r '.items[0].config_path // ""' "${file}")"
+  PB_PORT="$(jq -r '.items[0].port // ""' "${file}")"
+  PB_IS_DEV="$(jq -r '.items[0].is_dev // false' "${file}")"
+  PB_IS_DISABLED="$(jq -r '.items[0].is_disabled // false' "${file}")"
+  PB_IS_DELETED="$(jq -r '.items[0].is_deleted // false' "${file}")"
+  PB_UPDATEABLE="$(jq -r '.items[0].updateable // false' "${file}")"
+  PB_PRIVILEGED="$(jq -r '.items[0].privileged // false' "${file}")"
+}
+
+metadata_repo_name() {
+  if [[ "${PB_IS_DEV}" == "true" ]]; then
+    echo "community-scripts/ProxmoxVED"
+  else
+    echo "community-scripts/ProxmoxVE"
+  fi
+}
+
+metadata_fetch_all_records() {
+  local out="$1"
+
+  metadata_supported || return 1
+
+  local page=1
+  local per_page=500
+  local total_pages=1
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  : > "${out}"
+
+  while (( page <= total_pages )); do
+    local page_file="${tmpdir}/page-${page}.json"
+    curl -fsSLG \
+      --data-urlencode "perPage=${per_page}" \
+      --data-urlencode "page=${page}" \
+      --data-urlencode "sort=slug" \
+      --data-urlencode "expand=type" \
+      "${METADATA_PB_API}/${METADATA_PB_COLLECTION}/records" -o "${page_file}"
+
+    jq -c '.items[]' "${page_file}" >> "${out}"
+    total_pages="$(jq -r '.totalPages // 1' "${page_file}")"
+    ((page++))
+  done
+
+  rm -rf "${tmpdir}"
 }
 
 extract_var_default() {

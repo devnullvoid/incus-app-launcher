@@ -23,6 +23,8 @@ There are two upstream integration models:
 - Fetch upstream `ct/<app>.sh`, `install/<app>-install.sh`, and shared helper
   files on demand.
 - Fetch upstream `tools/addon/<name>.sh` on demand for addon workflows.
+- PocketBase metadata may be used to enrich discovery and route selection, but
+  not as the execution source of truth.
 - Prefer pinned upstream refs for repeatable builds and tests.
 - Treat all upstream apps as attemptable by default.
 - Do not maintain a local master allowlist of "compatible" apps.
@@ -30,6 +32,7 @@ There are two upstream integration models:
   - launcher behavior
   - automation profiles for known interactive apps
   - addon execution behavior for existing containers
+  - optional metadata enrichment behavior
   - Incus-specific translation logic
   - test fixtures and docs
 
@@ -59,6 +62,18 @@ There are two upstream integration models:
 - Unprofiled apps should still be runnable through the generic flow.
 - If an unprofiled app fails, prefer improving generic handling first.
 - Add a per-app profile only when the problem is truly app-specific.
+
+## Metadata policy
+
+- Treat PocketBase as an optional metadata layer.
+- Use it for:
+  - discovery
+  - search
+  - script-type labeling
+  - dev/prod labeling
+  - disabled/deleted visibility
+- Do not rely on PocketBase alone for install behavior, prompt handling, or
+  Incus runtime decisions when the upstream scripts disagree.
 
 ## Implementation preferences
 
