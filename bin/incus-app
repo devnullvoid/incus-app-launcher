@@ -434,6 +434,12 @@ run_addon_flow() {
 
   local workdir
   workdir="$(mktemp -d)"
+  local metadata_file="${workdir}/metadata.json"
+
+  metadata_clear
+  if metadata_fetch_record "${addon_name}" "${metadata_file}" 2>/dev/null; then
+    metadata_parse_record "${metadata_file}" || true
+  fi
 
   fetch_upstream_addon "${addon_name}" "${ref}" "${workdir}"
 

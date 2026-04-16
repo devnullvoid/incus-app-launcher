@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 UPSTREAM_REPO="${UPSTREAM_REPO:-community-scripts/ProxmoxVE}"
-UPSTREAM_RAW_BASE="${UPSTREAM_RAW_BASE:-https://raw.githubusercontent.com/${UPSTREAM_REPO}}"
 METADATA_PB_BASE="${METADATA_PB_BASE:-https://db.community-scripts.org}"
 METADATA_PB_API="${METADATA_PB_API:-${METADATA_PB_BASE}/api/collections}"
 METADATA_PB_COLLECTION="${METADATA_PB_COLLECTION:-script_scripts}"
@@ -54,12 +53,14 @@ fetch_raw_file() {
   local ref="$1"
   local path="$2"
   local out="$3"
+  local repo="${4:-${UPSTREAM_REPO}}"
   local url
+  local raw_base="https://raw.githubusercontent.com/${repo}"
 
-  if [[ "${UPSTREAM_RAW_BASE}" == file://* ]]; then
-    url="${UPSTREAM_RAW_BASE}/${path}"
+  if [[ "${UPSTREAM_REPO}" == file://* ]]; then
+    url="${UPSTREAM_REPO}/${path}"
   else
-    url="${UPSTREAM_RAW_BASE}/${ref}/${path}"
+    url="${raw_base}/${ref}/${path}"
   fi
 
   curl -fsSL "${url}" -o "${out}"
@@ -69,18 +70,20 @@ fetch_upstream_bundle() {
   local app="$1"
   local ref="$2"
   local workdir="$3"
+  local repo="${4:-$(metadata_repo_name)}"
 
-  fetch_raw_file "${ref}" "ct/${app}.sh" "${workdir}/ct.sh"
-  fetch_raw_file "${ref}" "install/${app}-install.sh" "${workdir}/install.sh"
-  fetch_raw_file "${ref}" "misc/install.func" "${workdir}/install.func"
+  fetch_raw_file "${ref}" "ct/${app}.sh" "${workdir}/ct.sh" "${repo}"
+  fetch_raw_file "${ref}" "install/${app}-install.sh" "${workdir}/install.sh" "${repo}"
+  fetch_raw_file "${ref}" "misc/install.func" "${workdir}/install.func" "${repo}"
 }
 
 fetch_upstream_addon() {
   local addon="$1"
   local ref="$2"
   local workdir="$3"
+  local repo="${4:-$(metadata_repo_name)}"
 
-  fetch_raw_file "${ref}" "tools/addon/${addon}.sh" "${workdir}/addon.sh"
+  fetch_raw_file "${ref}" "tools/addon/${addon}.sh" "${workdir}/addon.sh" "${repo}"
 }
 
 metadata_supported() {

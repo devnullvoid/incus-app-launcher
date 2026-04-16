@@ -11,6 +11,8 @@
 - Added interactive prompt passthrough for upstream installers.
 - Improved smoke-check diagnostics and stabilized the Docker smoke-test path.
 - Matched upstream default nesting behavior for Docker-style workloads.
+- Fixed upstream fetch routing for PocketBase `is_dev=true` apps so `show`,
+  `create`, `smoke-test`, and addon flows resolve against the dev repo.
 
 ## 2026-03 MVP
 
